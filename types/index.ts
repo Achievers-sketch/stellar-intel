@@ -65,12 +65,18 @@ export interface AnchorCapabilities {
 
 /** Relevant fields from a stellar.toml file resolved via SEP-1. */
 export interface Sep1TomlData {
-  TRANSFER_SERVER_SEP0024: string | undefined
-  WEB_AUTH_ENDPOINT: string | undefined
-  SIGNING_KEY: string | undefined
-  CURRENCIES: Array<{ code: string; issuer?: string }> | undefined
+  domain: string
+  TRANSFER_SERVER_SEP0024: string | null
+  ANCHOR_QUOTE_SERVER: string | null
+  WEB_AUTH_ENDPOINT: string | null
+  SIGNING_KEY: string | null
+  NETWORK_PASSPHRASE: string | null
+  CURRENCIES: Array<{ code: string; issuer?: string }>
   capabilities: AnchorCapabilities
 }
+
+/** A normalized stellar.toml response for an anchor resolved via SEP-1. */
+export type ResolvedAnchorToml = Sep1TomlData
 
 /** A resolved anchor with protocol capabilities attached. */
 export type ResolvedAnchor = Anchor & Sep1TomlData
