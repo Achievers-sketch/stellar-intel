@@ -191,6 +191,87 @@ export interface WithdrawHandoffPayload {
   jwt: string;
 }
 
+// ─── Intent schema ────────────────────────────────────────────────────────────
+
+/** Delivery method preference for fiat payout. */
+export type DeliveryHint = 'bank_account' | 'cash' | 'mobile_money';
+
+/** User preferences for routing and execution. */
+export interface IntentPreferences {
+  allowSplit?: boolean; // whether to allow multi-anchor splits
+  maxAnchors?: number; // maximum number of anchors to use (default: 1 for MVP)
+  preferAnchorIds?: string[]; // optional anchor whitelist
+}
+
+/** The user's signed statement of purpose for off-ramp withdrawal. */
+export interface Intent {
+  version: 1;
+  nonce: string; // 128-bit random, replay protection
+  account: string; // user's Stellar public key
+  corridor: string; // e.g. 'usdc-ngn'
+  sellAsset: { code: string; issuer: string }; // e.g. USDC
+  sellAmount: string; // decimal string in send asset
+  buyAsset: { code: string }; // fiat currency code, e.g. 'NGN'
+  minReceive: string; // floor on delivered amount (decimal string)
+  deliveryHint: DeliveryHint; // preferred delivery method
+  deadline: string; // RFC3339, e.g. 2026-05-23T19:00:00Z
+  preferences?: IntentPreferences;
+}
+
+/** A signed intent with hash and cryptographic signature. */
+export interface SignedIntent {
+  intent: Intent;
+  intentHash: string; // sha-256 hex over canonical JSON
+  signature: string; // ed25519 hex signature over intentHash
+}
+
+// ─── SEP-38 Quote ──────────────────────────────────────────────────────────────
+
+/** A firm SEP-38 quote from an anchor. Maps to POST /sep38/quote response. */
+export interface Sep38Quote {
+  id: string; // Unique quote identifier
+  price: string; // exchange rate: local currency units per 1 sell_asset
+  total_price: string; // effective price after fees
+  sell_amount: string; // exact amount in sell_asset (may differ from request)
+  buy_amount: string; // exact amount in buy_asset
+  fee: {
+    total: string; // total fee in sell_asset
+    percent: string; // fee as percentage
+  };
+  expires_at: string; // RFC3339 expiry timestamp
+  context: 'sep24'; // context used in the quote request
+}
+
+/** An evaluated SEP-38 quote with eligibility and score information. */
+export interface EvaluatedQuote extends Sep38Quote {
+  anchorId: string;
+  anchorName: string;
+  meetsFloor: boolean; // whether buyAmount >= intent.minReceive
+  expiredAt: Date; // parsed expires_at
+  isExpired: boolean; // whether quote has expired
+  netAmount: string; // buy amount (for clarity in solver output)
+}
+
+// ─── Router Plan ───────────────────────────────────────────────────────────────
+
+/** A single-anchor execution plan: which anchor to use and the firm quote. */
+export interface Plan {
+  type: 'single_anchor';
+  anchorId: string;
+  anchorName: string;
+  quoteId: string; // SEP-38 quote ID to pass to /transactions/withdraw/interactive
+  netAmount: string; // amount user will receive in buy_asset
+  fee: string; // fee amount in sell_asset
+  price: string; // exchange rate used
+}
+
+/** Result of the solver: either a plan to execute or a typed error. */
+export type SolverResult = 
+  | { ok: true; plan: Plan }
+  | { ok: false; error: 'no_eligible_route' }
+  | { ok: false; error: 'floor_not_met'; details: string }
+  | { ok: false; error: 'all_quotes_expired'; details: string };
+
 // ─── API ──────────────────────────────────────────────────────────────────────
 
 /** Shape returned by GET /api/rates. */
