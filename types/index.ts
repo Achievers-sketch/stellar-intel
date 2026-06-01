@@ -81,6 +81,78 @@ export type ResolvedAnchorToml = Sep1TomlData;
 /** A resolved anchor with protocol capabilities attached. */
 export type ResolvedAnchor = Anchor & Sep1TomlData;
 
+// ─── SEP-38 ───────────────────────────────────────────────────────────────────
+
+/** A delivery method offered for buying or selling an off-chain SEP-38 asset. */
+export interface Sep38DeliveryMethod {
+  name: string;
+  description: string;
+}
+
+/** A single asset entry from the SEP-38 GET /info response. */
+export interface Sep38Asset {
+  /** SEP-38 asset identifier, e.g. "stellar:USDC:GA5..." or "iso4217:BRL". */
+  asset: string;
+  /** Methods for selling (delivering) the asset to the anchor. Empty for on-chain assets. */
+  sellDeliveryMethods: Sep38DeliveryMethod[];
+  /** Methods for buying (receiving) the asset from the anchor. Empty for on-chain assets. */
+  buyDeliveryMethods: Sep38DeliveryMethod[];
+  /** ISO 3166-1 alpha-3 country codes the asset is available in. */
+  countryCodes: string[];
+}
+
+/** Parsed SEP-38 GET /info response: supported assets and their delivery methods. */
+export interface Sep38Info {
+  assets: Sep38Asset[];
+}
+
+/** Request parameters for the SEP-38 GET /prices indicative price feed. */
+export interface Sep38PricesParams {
+  sell_asset: string;
+  sell_amount: string;
+  sell_delivery_method?: string;
+  buy_delivery_method?: string;
+  country_code?: string;
+}
+
+/** A single indicative buy option from the SEP-38 GET /prices response. */
+export interface Sep38IndicativePrice {
+  /** The SEP-38 identifier of the asset that can be bought (raw `asset` field). */
+  asset: string;
+  /** Alias of `asset`: the asset the user would buy with the sell asset. */
+  buy_asset: string;
+  /** Indicative unit price of buy_asset in terms of sell_asset, as a decimal string. */
+  price: string;
+  /** Indicative total price for the requested sell_amount, including fees. */
+  total_price: string;
+}
+
+/** The downstream protocol a SEP-38 firm quote will be used with. */
+export type Sep38QuoteContext = 'sep6' | 'sep24' | 'sep31';
+
+/** Request parameters for SEP-38 POST /quote (firm quote creation). */
+export interface Sep38QuoteParams {
+  sell_asset: string;
+  buy_asset: string;
+  sell_amount: string;
+  context: Sep38QuoteContext;
+  buy_delivery_method?: string;
+  sell_delivery_method?: string;
+  country_code?: string;
+  /** RFC 3339 timestamp; the quote must remain valid until at least this time. */
+  expire_after?: string;
+}
+
+/** A firm SEP-38 quote returned by POST /quote. */
+export interface Sep38Quote {
+  id: string;
+  /** RFC 3339 timestamp after which the quote is no longer honored. */
+  expires_at: string;
+  price: string;
+  sell_amount: string;
+  buy_amount: string;
+}
+
 // ─── SEP-10 ───────────────────────────────────────────────────────────────────
 
 /** A JWT issued by an anchor after successful SEP-10 authentication. */

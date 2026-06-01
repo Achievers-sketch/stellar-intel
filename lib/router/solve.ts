@@ -1,74 +1,57 @@
 /**
- * Core single-anchor solver for the intent router.
+ * lib/router/solve.ts
  *
- * Selects the best SEP-38 quote that meets the floor and deadline constraints.
- * Returns a deterministic plan or a typed error.
+ * Intent router — two complementary solvers:
+ *   - solveSingleAnchor: picks the best SEP-38 quote meeting floor + deadline (issue #119)
+ *   - solveWithFallback: rate-based fallback re-solve across SEP-24 anchors (issue #215)
  */
 
-import type { Intent, EvaluatedQuote, Plan, SolverResult } from '@/types'
+import { fetchAllAnchorFees, computeRateComparison } from '@/lib/stellar/sep24'
+import type { AnchorRate, EvaluatedQuote, Intent, Plan, RateComparison, SolverResult } from '@/types'
+
+// ─── solveSingleAnchor ────────────────────────────────────────────────────────
 
 /**
  * Compares two decimal strings numerically.
  * Returns: -1 if a < b, 0 if a === b, 1 if a > b
- * Handles scientific notation and leading zeros.
+ *
+ * Uses BigInt scaled to 7 decimal places to avoid float precision loss on
+ * large financial amounts.
  */
 function compareDecimals(a: string, b: string): number {
-  const numA = parseFloat(a)
-  const numB = parseFloat(b)
-  if (numA < numB) return -1
-  if (numA > numB) return 1
+  const SCALE = 10_000_000n
+  const toBigInt = (s: string): bigint => {
+    const [int = '0', frac = ''] = s.split('.')
+    const fracPadded = frac.slice(0, 7).padEnd(7, '0')
+    return BigInt(int) * SCALE + BigInt(fracPadded)
+  }
+  const bigA = toBigInt(a)
+  const bigB = toBigInt(b)
+  if (bigA < bigB) return -1
+  if (bigA > bigB) return 1
   return 0
 }
 
-/**
- * Checks if a quote meets the intent's minimum receive floor.
- * Compares the quote's buy_amount against the intent's minReceive.
- */
 function meetsFloor(quote: EvaluatedQuote, intent: Intent): boolean {
   return compareDecimals(quote.buy_amount, intent.minReceive) >= 0
 }
 
-/**
- * Checks if the intent's deadline has passed.
- * Used to reject intents that are already expired or nearly expired.
- */
 function isDeadlineExpired(deadline: string): boolean {
-  const deadlineTime = new Date(deadline).getTime()
-  return deadlineTime <= Date.now()
+  return new Date(deadline).getTime() <= Date.now()
 }
 
-/**
- * Checks if a quote has expired based on its expires_at field.
- */
 function isQuoteExpired(expiresAt: string): boolean {
-  const expireTime = new Date(expiresAt).getTime()
-  return expireTime <= Date.now()
+  return new Date(expiresAt).getTime() <= Date.now()
 }
 
 /**
- * Selects the best single-anchor quote from a set of evaluated quotes.
- *
- * **Acceptance Criteria:**
- * - Returns the best qualified quote if one meets all constraints
- * - Skips anchors whose firm quote undercuts the floor
- * - Returns typed "no_eligible_route" error if no quote qualifies
- * - Returns "floor_not_met" if all quotes violate the minimum
- * - Returns "all_quotes_expired" if all quotes have expired
- *
- * **Selection Criteria (in order):**
- * 1. Reject quote if it has expired
- * 2. Reject quote if it doesn't meet the floor (minReceive)
- * 3. Among valid quotes, select the one with the highest buy_amount
- *
- * @param intent - The user's intent (includes minReceive floor and deadline)
- * @param evaluatedQuotes - Array of SEP-38 quotes already evaluated for eligibility
- * @returns A SolverResult: either a plan or a typed error
+ * Selects the best single-anchor SEP-38 quote that meets the intent's floor
+ * and deadline constraints. Returns a typed discriminated-union result.
  */
 export function solveSingleAnchor(
   intent: Intent,
   evaluatedQuotes: EvaluatedQuote[]
 ): SolverResult {
-  // Check if the intent deadline has already passed
   if (isDeadlineExpired(intent.deadline)) {
     return {
       ok: false,
@@ -77,7 +60,6 @@ export function solveSingleAnchor(
     }
   }
 
-  // Separate quotes by expiration and floor status
   const validQuotes: EvaluatedQuote[] = []
   const expiredQuotes: EvaluatedQuote[] = []
   const floorViolations: EvaluatedQuote[] = []
@@ -92,16 +74,10 @@ export function solveSingleAnchor(
     }
   }
 
-  // If no valid quotes exist, return an appropriate error
   if (validQuotes.length === 0) {
-    // Special case: no quotes provided at all
     if (evaluatedQuotes.length === 0) {
-      return {
-        ok: false,
-        error: 'no_eligible_route',
-      }
+      return { ok: false, error: 'no_eligible_route' }
     }
-
     if (expiredQuotes.length === evaluatedQuotes.length) {
       return {
         ok: false,
@@ -109,30 +85,23 @@ export function solveSingleAnchor(
         details: `All ${evaluatedQuotes.length} quote(s) have expired`,
       }
     }
-
-    if (floorViolations.length > 0 && validQuotes.length === 0) {
-      const insufficientAmounts = floorViolations
+    if (floorViolations.length > 0) {
+      const detail = floorViolations
         .map((q) => `${q.anchorName}: ${q.buy_amount} < ${intent.minReceive}`)
         .join('; ')
       return {
         ok: false,
         error: 'floor_not_met',
-        details: `No quotes meet minimum receive of ${intent.minReceive}. ${insufficientAmounts}`,
+        details: `No quotes meet minimum receive of ${intent.minReceive}. ${detail}`,
       }
     }
-
-    return {
-      ok: false,
-      error: 'no_eligible_route',
-    }
+    return { ok: false, error: 'no_eligible_route' }
   }
 
-  // Select the quote with the highest buy_amount (best for user)
-  const bestQuote = validQuotes.reduce((best, current) => 
+  const bestQuote = validQuotes.reduce((best, current) =>
     compareDecimals(current.buy_amount, best.buy_amount) > 0 ? current : best
   )
 
-  // Build and return the plan
   const plan: Plan = {
     type: 'single_anchor',
     anchorId: bestQuote.anchorId,
@@ -143,16 +112,9 @@ export function solveSingleAnchor(
     price: bestQuote.price,
   }
 
-  return {
-    ok: true,
-    plan,
-  }
+  return { ok: true, plan }
 }
 
-/**
- * Custom error type for solver failures.
- * Provides a typed interface for handling specific routing failures.
- */
 export class NoEligibleRouteError extends Error {
   constructor(
     public code: 'no_eligible_route' | 'floor_not_met' | 'all_quotes_expired',
@@ -163,20 +125,87 @@ export class NoEligibleRouteError extends Error {
   }
 }
 
-/**
- * Throws a NoEligibleRouteError if the SolverResult indicates failure.
- * Used to convert discriminated union results into exceptions for consumers
- * that prefer exception-based error handling.
- *
- * @param result - The SolverResult to check
- * @throws NoEligibleRouteError if result.ok === false
- * @returns The plan if result.ok === true
- */
 export function throwIfNoRoute(result: SolverResult): Plan {
-  if (result.ok) {
-    return result.plan
-  }
-
+  if (result.ok) return result.plan
   const details = 'details' in result ? ` (${result.details})` : ''
   throw new NoEligibleRouteError(result.error, `${result.error}${details}`)
+}
+
+// ─── solveWithFallback ────────────────────────────────────────────────────────
+
+/** Maximum number of fallback re-solve attempts after the primary anchor fails. */
+export const MAX_FALLBACK_ATTEMPTS = 2
+
+export type QuoteRejectionReason = 'expired' | 'rejected' | 'unavailable'
+
+export interface SolveAttempt {
+  anchorId: string
+  succeeded: boolean
+  rejectionReason?: QuoteRejectionReason
+  attemptedAt: string
+}
+
+export interface SolveResult {
+  winner: AnchorRate | null
+  comparison: RateComparison | null
+  attempts: SolveAttempt[]
+}
+
+async function fetchBestRate(
+  corridorId: string,
+  amount: string,
+  excludeIds: Set<string>
+): Promise<{ winner: AnchorRate; comparison: RateComparison } | null> {
+  const settled = await fetchAllAnchorFees(amount, corridorId)
+
+  const filtered = settled.map((result): PromiseSettledResult<AnchorRate> => {
+    if (result.status === 'fulfilled' && excludeIds.has(result.value.anchorId)) {
+      return { status: 'rejected', reason: new Error(`Anchor ${result.value.anchorId} excluded`) }
+    }
+    return result
+  })
+
+  const comparison = computeRateComparison(filtered, corridorId)
+  if (!comparison.bestRateId) return null
+
+  const winner = comparison.rates.find((r) => r.anchorId === comparison.bestRateId)
+  if (!winner) return null
+
+  return { winner, comparison }
+}
+
+/**
+ * Solves for the best anchor for a given corridor and amount.
+ * Re-solves with fallback anchors if the primary quote is rejected, up to
+ * MAX_FALLBACK_ATTEMPTS times.
+ */
+export async function solveWithFallback(
+  corridorId: string,
+  amount: string,
+  isRejected: (rate: AnchorRate) => boolean = () => false
+): Promise<SolveResult> {
+  const attempts: SolveAttempt[] = []
+  const excludeIds = new Set<string>()
+  const maxRounds = 1 + MAX_FALLBACK_ATTEMPTS
+
+  for (let round = 0; round < maxRounds; round++) {
+    const result = await fetchBestRate(corridorId, amount, excludeIds)
+    if (!result) break
+
+    const { winner, comparison } = result
+    const rejected = isRejected(winner)
+
+    attempts.push({
+      anchorId: winner.anchorId,
+      succeeded: !rejected,
+      ...(rejected && { rejectionReason: 'rejected' as QuoteRejectionReason }),
+      attemptedAt: new Date().toISOString(),
+    })
+
+    if (!rejected) return { winner, comparison, attempts }
+
+    excludeIds.add(winner.anchorId)
+  }
+
+  return { winner: null, comparison: null, attempts }
 }
