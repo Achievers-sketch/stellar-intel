@@ -1,29 +1,23 @@
-use soroban_sdk::{contracttype, Address, BytesN, Env, Vec, Symbol};
+use soroban_sdk::{Address, Env, String, Vec};
 
-#[derive(Clone)]
-#[contracttype]
-pub struct OutcomeRecord {
-    pub outcome_hash: BytesN<32>,
-    pub settle_seconds: u32,
-    pub success: bool,
-    pub timestamp: u64,
-}
+pub fn submit_outcome(
+    env: &Env,
+    admin: Address,
+    anchor_id: String,
+    outcome_hash: String,
+    settle_seconds: u64,
+    success: bool,
+) {
+    // v1 simple auth checking. Reverts if invocation wasn't signed by admin.
+    admin.require_auth();
 
-#[derive(Clone)]
-#[contracttype]
-pub enum DataKey {
-    Admin,
-    Outcomes(Address), // Maps Anchor Address to Vec<OutcomeRecord>
-}
+    let mut outcomes: Vec<(String, u64, bool)> = env
+        .storage()
+        .persistent()
+        .get(&anchor_id)
+        .unwrap_or(Ok(Vec::new(env)))
+        .unwrap();
 
-pub fn read_outcomes(env: &Env, anchor: &Address) -> Vec<OutcomeRecord> {
-    let key = DataKey::Outcomes(anchor.clone());
-    env.storage().persistent().get(&key).unwrap_or(Vec::new(env))
-}
-
-pub fn write_outcome(env: &Env, anchor: &Address, record: OutcomeRecord) {
-    let key = DataKey::Outcomes(anchor.clone());
-    let mut outcomes = read_outcomes(env, anchor);
-    outcomes.push_back(record);
-    env.storage().persistent().set(&key, &outcomes);
+    outcomes.push_back((outcome_hash, settle_seconds, success));
+    env.storage().persistent().set(&anchor_id, &outcomes);
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
+import { ScoreBadge } from '@/components/ui/ScoreBadge';
 
 export interface AnchorTrustScore {
   anchorId: string;
@@ -89,18 +90,8 @@ function TrustBarItem({ score, rank, onClick }: TrustBarItemProps) {
         <p className="truncate text-sm font-medium text-gray-900 dark:text-white">
           {score.anchorName}
         </p>
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          <span
-            className={
-              scorePercent >= 80
-                ? 'text-green-600 dark:text-green-400'
-                : scorePercent >= 60
-                  ? 'text-yellow-600 dark:text-yellow-400'
-                  : 'text-red-600 dark:text-red-400'
-            }
-          >
-            {scorePercent}%
-          </span>{' '}
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 flex items-center gap-1.5">
+          <ScoreBadge score={scorePercent} />
           trust score
         </p>
       </div>

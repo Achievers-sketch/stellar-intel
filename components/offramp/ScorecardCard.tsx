@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { hasEnoughData, estimateTimeToThreshold, MIN_OUTCOMES_THRESHOLD } from '@/lib/reputation/thresholds';
 
 type ReputationWindow = '7d' | '30d' | '90d';
 
@@ -17,6 +18,7 @@ interface ReputationMetrics {
   settleP95: number | null;
   slippageP50: number | null;
   slippageP95: number | null;
+  outcomesCount: number;
 }
 
 const emptyMetrics: ReputationMetrics = {
@@ -25,6 +27,7 @@ const emptyMetrics: ReputationMetrics = {
   settleP95: null,
   slippageP50: null,
   slippageP95: null,
+  outcomesCount: 0,
 };
 
 function toNumber(value: unknown): number | null {
@@ -70,6 +73,7 @@ function parseReputationResponse(body: unknown): ReputationMetrics {
           payload.slippage_p95_percent ??
           payload.slippageP95Percent
       ) ?? null,
+    outcomesCount: toNumber(payload.outcomes_count ?? payload.outcomesCount) ?? 0,
   };
 }
 
@@ -158,6 +162,9 @@ export function ScorecardCard({ anchorId, window: timeframe }: ScorecardCardProp
     };
   }, [anchorId, timeframe]);
 
+  const enoughData = hasEnoughData(metrics.outcomesCount);
+  const remaining = MIN_OUTCOMES_THRESHOLD - metrics.outcomesCount;
+
   return (
     <Card className="space-y-4">
       <div className="flex flex-col gap-1">
@@ -176,6 +183,23 @@ export function ScorecardCard({ anchorId, window: timeframe }: ScorecardCardProp
       ) : !hasReputationMetrics(metrics) ? (
         <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-300">
           No reputation metrics available for this anchor.
+        </div>
+      ) : !enoughData ? (
+        <div className="flex flex-col items-center justify-center py-10 px-4 text-center border rounded-xl bg-gray-50/50 dark:bg-gray-800/30 border-gray-200 dark:border-gray-700">
+          <div className="w-12 h-12 mb-4 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-500 dark:text-blue-400">
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
+            Collecting Data
+          </h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 max-w-sm mb-5">
+            We are still evaluating {anchorId}. We need <strong>{remaining}</strong> more outcome{remaining !== 1 ? 's' : ''} to generate a reliable, statistically significant reputation score.
+          </p>
+          <div className="inline-flex items-center px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-200/70 rounded-full dark:bg-gray-700 dark:text-gray-300">
+            Expected scorecard generation: {estimateTimeToThreshold(metrics.outcomesCount)}
+          </div>
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-3">
