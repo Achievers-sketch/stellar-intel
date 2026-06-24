@@ -25,13 +25,14 @@ const RESOLVED_ANCHOR = {
   TRANSFER_SERVER_SEP0024: TRANSFER_SERVER,
   WEB_AUTH_ENDPOINT: 'https://cowrie.exchange/auth',
   SIGNING_KEY: 'G...',
-  domain: 'cowrie.exchange',
+  capabilities: { sep10: true, sep24: true, sep38: false, sep12: false },
+  domain: 'anchor.domain',
   ANCHOR_QUOTE_SERVER: null,
   NETWORK_PASSPHRASE: null,
-  CURRENCIES: [
-    { code: 'USDC', issuer: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN' },
-  ],
-  capabilities: { sep10: true, sep24: true, sep38: false, sep12: false },
+  ORG_URL: null,
+  ORG_SUPPORT_EMAIL: null,
+  ORG_SUPPORT_URL: null,
+  CURRENCIES: [],
 };
 
 beforeEach(() => {
@@ -153,6 +154,7 @@ describe('computeRateComparison', () => {
           totalReceived: 97 * 1580,
           source: 'sep24-fee' as const,
           updatedAt: new Date(),
+          expiresAt: undefined,
         },
       },
       {
@@ -167,6 +169,7 @@ describe('computeRateComparison', () => {
           totalReceived: 98.5 * 1580,
           source: 'sep24-fee' as const,
           updatedAt: new Date(),
+          expiresAt: undefined,
         },
       },
     ];
@@ -183,6 +186,7 @@ describe('computeRateComparison', () => {
     const comparison = computeRateComparison(results, 'usdc-ngn');
     expect(comparison.rates).toHaveLength(0);
     expect(comparison.bestRateId).toBe('');
+    expect(comparison.pending).toEqual([]);
   });
 });
 

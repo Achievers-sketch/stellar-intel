@@ -17,13 +17,14 @@ const RESOLVED_ANCHOR = {
   TRANSFER_SERVER_SEP0024: TRANSFER_SERVER,
   WEB_AUTH_ENDPOINT: 'https://cowrie.exchange/auth',
   SIGNING_KEY: 'G...',
-  domain: 'cowrie.exchange',
+  capabilities: { sep10: true, sep24: true, sep38: false, sep12: false },
+  domain: 'anchor.domain',
   ANCHOR_QUOTE_SERVER: null,
   NETWORK_PASSPHRASE: null,
-  CURRENCIES: [
-    { code: 'USDC', issuer: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN' },
-  ],
-  capabilities: { sep10: true, sep24: true, sep38: false, sep12: false },
+  ORG_URL: null,
+  ORG_SUPPORT_EMAIL: null,
+  ORG_SUPPORT_URL: null,
+  CURRENCIES: [],
 };
 
 const PARAMS = {

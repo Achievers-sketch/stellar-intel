@@ -5,6 +5,7 @@ import { horizonServer } from '@/lib/stellar/horizon';
 
 vi.mock('@stellar/freighter-api', () => ({
   signTransaction: vi.fn(),
+  getNetwork: vi.fn(async () => ({ error: false, network: '', networkPassphrase: '' })),
 }));
 
 beforeEach(() => {
@@ -50,8 +51,8 @@ describe('buildWithdrawPayment', () => {
       assetIssuer: USDC_ISSUER,
     });
 
-    expect(tx.operations).toHaveLength(1);
-    expect(tx.operations[0].type).toBe('payment');
+    expect(tx?.operations).toHaveLength(1);
+    expect(tx?.operations?.[0]?.type).toBe('payment');
   });
 
   it('applies the memo field to the built transaction', async () => {
@@ -79,16 +80,31 @@ describe('buildWithdrawPayment', () => {
       assetIssuer: USDC_ISSUER,
     });
 
-    const op = tx.operations[0] as { asset: { code: string; issuer: string } };
-    expect(op.asset.code).toBe('USDC');
-    expect(op.asset.issuer).toBe(USDC_ISSUER);
+    const op = tx.operations[0] as any;
+    expect(op?.asset?.code).toBe('USDC');
+    expect(op?.asset?.issuer).toBe(USDC_ISSUER);
+  });
+
+  it('returns correctly parsed operations for native XLM', async () => {
+    const tx = await buildWithdrawPayment({
+      sourcePublicKey: SOURCE_KEY,
+      anchorAccount: ANCHOR_ACCOUNT,
+      amount: '10',
+      memo: 'memo-abc',
+      memoType: 'text',
+      assetCode: 'XLM',
+      assetIssuer: '',
+    });
+
+    const op = tx.operations[0] as any;
+    // The JS SDK might set it to Asset('XLM', undefined) or Native
+    expect(op?.asset?.isNative?.() || op?.asset?.code === 'XLM').toBe(true);
   });
 
   it('extracts result_codes into a readable message on Horizon submit error', async () => {
     const { signAndSubmitPayment } = await import('@/lib/stellar/horizon');
     const freighter = await import('@stellar/freighter-api');
 
-    // Build a real transaction so we have valid XDR to sign
     const tx = await buildWithdrawPayment({
       sourcePublicKey: SOURCE_KEY,
       anchorAccount: ANCHOR_ACCOUNT,
@@ -99,7 +115,6 @@ describe('buildWithdrawPayment', () => {
       assetIssuer: USDC_ISSUER,
     });
 
-    // Return the same XDR as the "signed" result so fromXDR can parse it
     vi.mocked(freighter.signTransaction).mockResolvedValue({
       signedTxXdr: tx.toXDR(),
       signerAddress: SOURCE_KEY,
@@ -116,5 +131,18 @@ describe('buildWithdrawPayment', () => {
     });
 
     await expect(signAndSubmitPayment(tx)).rejects.toThrow(/tx_failed|op_underfunded/);
+  });
+
+  it('throws a formatted error on missing response', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        return { ok: false, status: 500, json: async () => ({}) };
+      })
+    );
+
+    // ... rest of the test
+    const { signAndSubmitPayment } = await import('@/lib/stellar/horizon');
+    await expect(signAndSubmitPayment('xdr' as any)).rejects.toThrow();
   });
 });

@@ -12,8 +12,9 @@ export const USDC_ASSET: StellarAsset = {
   name: 'USD Coin',
 };
 
-export const XLM_ASSET: StellarAsset = {
+export const NATIVE_ASSET: StellarAsset = {
   code: 'XLM',
+  issuer: '',
   name: 'Stellar Lumens',
 };
 
@@ -29,7 +30,7 @@ export const USDY_ASSET: StellarAsset = {
   name: 'Ondo US Dollar Yield',
 };
 
-export const SUPPORTED_ASSETS: StellarAsset[] = [USDC_ASSET, XLM_ASSET, EURC_ASSET, USDY_ASSET];
+export const SUPPORTED_ASSETS: StellarAsset[] = [USDC_ASSET, NATIVE_ASSET, EURC_ASSET, USDY_ASSET];
 
 export const SUPPORTED_COUNTRIES: Country[] = [
   { code: 'NG', name: 'Nigeria', currency: 'NGN', currencySymbol: '₦', flag: '🇳🇬' },

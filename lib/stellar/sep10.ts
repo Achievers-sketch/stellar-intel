@@ -4,6 +4,12 @@ import { getWebAuthEndpoint, resolveAnchor } from './sep1'
 import { getCachedJwt, setCachedJwt, invalidateCachedJwt } from './jwt-cache'
 import type { ResolvedAnchor, Sep10Auth } from '@/types'
 import { UserRejectedError } from './errors'
+import { Networks, TransactionBuilder } from '@stellar/stellar-sdk';
+import type { Transaction, FeeBumpTransaction } from '@stellar/stellar-sdk';
+import { resolveAnchor } from './sep1';
+import { getCachedJwt, setCachedJwt, invalidateCachedJwt } from './jwt-cache';
+import type { ResolvedAnchor, Sep10Auth } from '@/types';
+import { UserRejectedError, WalletError, ErrorCode } from './errors';
 
 export { invalidateCachedJwt, getCachedJwt } from './jwt-cache'
 
@@ -18,6 +24,38 @@ export class ChallengeError extends Error {
   ) {
     super(message)
     this.name = 'ChallengeError'
+  }
+}
+
+/**
+ * Thrown before signing when Freighter's selected network doesn't match the
+ * network the anchor's challenge is for. Carries friendly names for both sides
+ * so the UI can tell the user exactly which network to switch to.
+ */
+export class NetworkMismatchError extends WalletError {
+  constructor(
+    public readonly expectedNetwork: string,
+    public readonly walletNetwork: string
+  ) {
+    super(
+      `Switch network in Freighter to ${expectedNetwork}. It is currently set to ${walletNetwork}.`,
+      ErrorCode.NETWORK_MISMATCH
+    );
+    this.name = 'NetworkMismatchError';
+  }
+}
+
+/** Maps a Stellar network passphrase to a human-readable network name. */
+export function networkNameForPassphrase(passphrase: string): string {
+  switch (passphrase) {
+    case Networks.PUBLIC:
+      return 'Mainnet (Public)';
+    case Networks.TESTNET:
+      return 'Testnet';
+    case Networks.FUTURENET:
+      return 'Futurenet';
+    default:
+      return passphrase;
   }
 }
 
@@ -135,6 +173,10 @@ export async function fetchChallenge(
   url.searchParams.set('account', publicKey)
 
   const res = await fetch(url.toString())
+  const url = new URL(webAuthEndpoint);
+  url.searchParams.set('account', publicKey);
+
+  const res = await fetch(url.toString());
   if (!res.ok) {
     throw new Error(`Challenge fetch failed: HTTP ${res.status} from ${webAuthEndpoint}`)
   }
@@ -170,6 +212,26 @@ export async function signChallenge(
 ): Promise<string> {
   const { signTransaction } = await import('@stellar/freighter-api')
   const result = await signTransaction(challengeXdr, { networkPassphrase })
+  const { signTransaction, getNetwork } = await import('@stellar/freighter-api');
+
+  // Pre-sign guard. Freighter surfaces an opaque error when its selected
+  // network doesn't match the transaction's passphrase, so detect the mismatch
+  // here and raise actionable guidance instead. If the network can't be read,
+  // fall through and let the sign attempt proceed.
+  try {
+    const net = await getNetwork();
+    if (!net.error && net.networkPassphrase && net.networkPassphrase !== networkPassphrase) {
+      throw new NetworkMismatchError(
+        networkNameForPassphrase(networkPassphrase),
+        networkNameForPassphrase(net.networkPassphrase)
+      );
+    }
+  } catch (err) {
+    if (err instanceof NetworkMismatchError) throw err;
+    // Couldn't read Freighter's network — proceed and let signing surface any issue.
+  }
+
+  const result = await signTransaction(challengeXdr, { networkPassphrase });
 
   if (result.error) {
     throw new UserRejectedError()
@@ -189,6 +251,7 @@ export async function submitChallenge(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ transaction: signedXdr }),
   })
+  });
 
   if (!res.ok) {
     throw new Sep10AuthError(
@@ -222,18 +285,18 @@ export async function authenticate(
   const anchor =
     typeof anchorOrDomain === 'string'
       ? await resolveAuthenticationAnchor(anchorOrDomain)
-      : anchorOrDomain
+      : anchorOrDomain;
 
-  const cached = getCachedJwt(anchor.homeDomain, publicKey)
-  if (cached) return cached
+  const cached = getCachedJwt(anchor.homeDomain, publicKey);
+  if (cached) return cached;
 
   const webAuthEndpoint = anchor.WEB_AUTH_ENDPOINT
   if (!webAuthEndpoint || !anchor.capabilities.sep10) {
     throw new Error(`Anchor "${anchor.homeDomain}" does not support SEP-10 authentication.`)
   }
-  const { transaction, network_passphrase } = await fetchChallenge(webAuthEndpoint, publicKey)
-  const signedXdr = await signChallenge(transaction, network_passphrase)
-  const { token: jwt, expiresAt } = await submitChallenge(webAuthEndpoint, signedXdr)
+  const { transaction, network_passphrase } = await fetchChallenge(webAuthEndpoint, publicKey);
+  const signedXdr = await signChallenge(transaction, network_passphrase);
+  const { token: jwt, expiresAt } = await submitChallenge(webAuthEndpoint, signedXdr);
 
   const auth: Sep10Auth = { jwt, anchorDomain: anchor.homeDomain, publicKey, expiresAt }
   setCachedJwt(auth)
@@ -255,6 +318,23 @@ async function resolveAuthenticationAnchor(domain: string): Promise<ResolvedAnch
     assetIssuer: '',
     ...sep1,
   }
+}
+
+async function resolveAuthenticationAnchor(domain: string): Promise<ResolvedAnchor> {
+  const sep1 = await resolveAnchor(domain);
+  if (!sep1.capabilities.sep10) {
+    throw new Error(`Anchor "${domain}" does not support SEP-10 authentication.`);
+  }
+
+  return {
+    id: domain,
+    name: domain,
+    homeDomain: domain,
+    corridors: [],
+    assetCode: '',
+    assetIssuer: '',
+    ...sep1,
+  };
 }
 
 /**

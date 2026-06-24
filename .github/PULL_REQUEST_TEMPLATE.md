@@ -40,7 +40,12 @@ symbols with file_path:line_number when it helps.
 Example:
   - `lib/stellar/sep10.ts:54` — assert mainnet network passphrase at parse time
   - `components/offramp/ExecuteDrawer.tsx` — propagate `{ transactionId, jwt }`
-    to the page on success so `StatusTracker` mounts (fixes #002)
+    to the page on success so `StatusTracker` mounts (fixes the
+    StatusTracker-never-mounts bug)
+
+NOTE: never leave an example issue number here or in the "Closes #" line
+above. A closing keyword (Closes/Fixes/Resolves #N) auto-closes that exact
+issue on merge — only ever reference the one real issue your PR resolves.
 -->
 
 -
@@ -113,7 +118,7 @@ merge a PR with an unaddressed box.
 
 **Data integrity**
 
-- [ ] No fabricated rates, stub prices, or placeholder exchange rates (see [`issue.md #005`](../issue.md))
+- [ ] No fabricated rates, stub prices, or placeholder exchange rates (see the no-fabricated-rates rule in [`issue.md`](../issue.md))
 - [ ] No `isMock`, `// MOCK`, `// TODO: replace with real data`, or commented-out real code
 - [ ] If touching an anchor: the anchor's `stellar.toml` is publicly resolvable at `https://{domain}/.well-known/stellar.toml` and contains `TRANSFER_SERVER_SEP0024`
 - [ ] If touching SEP-10: network passphrase assertion is intact (mainnet only)

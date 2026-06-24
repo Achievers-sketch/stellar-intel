@@ -18,6 +18,7 @@ const unavailableRate: AnchorRate = {
 const unavailableRates: RateComparison = {
   corridorId: 'usdc-ngn',
   bestRateId: '',
+  pending: [],
   rates: [unavailableRate],
 };
 

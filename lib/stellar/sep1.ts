@@ -10,6 +10,14 @@ export type TomlResult = { ok: true; data: Sep1TomlData } | { ok: false; error: 
 
 const TTL_MS = 15 * 60 * 1000; // 15 minutes
 
+// ─── Retry policy ─────────────────────────────────────────────────────────────
+
+const TOML_MAX_ATTEMPTS = 3;
+const TOML_RETRY_BASE_MS = 250; // exponential backoff base: 250ms, 500ms, …
+const TOML_RETRY_BUDGET_MS = 5000; // wall-clock budget; stop before exceeding it
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 interface CacheEntry {
   data: Sep1TomlData;
   expiresAt: number;
@@ -74,10 +82,14 @@ function toSep1TomlData(domain: string, raw: Record<string, unknown>): Sep1TomlD
     WEB_AUTH_ENDPOINT: webAuthEndpoint,
     SIGNING_KEY: signingKey,
     NETWORK_PASSPHRASE: getString(raw, 'NETWORK_PASSPHRASE'),
+    ORG_URL: getString(raw, 'ORG_URL'),
+    ORG_SUPPORT_EMAIL: getString(raw, 'ORG_SUPPORT_EMAIL'),
+    ORG_SUPPORT_URL: getString(raw, 'ORG_SUPPORT_URL'),
     CURRENCIES: getCurrencies(raw),
     capabilities: {
       sep10: Boolean(webAuthEndpoint),
       sep24: Boolean(transferServer),
+      /** Derived from ANCHOR_QUOTE_SERVER presence — the authoritative source for SEP-38 capability. */
       sep38: Boolean(quoteServer),
       sep12: Boolean(signingKey),
     },
@@ -103,6 +115,29 @@ function requireTomlField(
 }
 
 /**
+ * Resolves a clickable support href from SEP-1 documentation fields.
+ * Priority: ORG_SUPPORT_URL → mailto:ORG_SUPPORT_EMAIL → ORG_URL (https only).
+ */
+export function resolveAnchorSupportHref(toml: Sep1TomlData): string | null {
+  const supportUrl = toml.ORG_SUPPORT_URL;
+  if (supportUrl?.startsWith('https://') || supportUrl?.startsWith('http://')) {
+    return supportUrl;
+  }
+
+  const email = toml.ORG_SUPPORT_EMAIL;
+  if (email) {
+    return `mailto:${email}`;
+  }
+
+  const orgUrl = toml.ORG_URL;
+  if (orgUrl?.startsWith('https://')) {
+    return orgUrl;
+  }
+
+  return null;
+}
+
+/**
  * Resolves an anchor stellar.toml file via SEP-1.
  * Results are cached in memory for 15 minutes. Failed resolutions are not cached.
  */
@@ -114,20 +149,38 @@ export async function resolveAnchor(domain: string): Promise<Sep1TomlData> {
     return cached.data;
   }
 
-  try {
-    const raw = (await StellarToml.Resolver.resolve(cacheKey)) as Record<string, unknown>;
-    const data = toSep1TomlData(cacheKey, raw);
+  // Retry transient resolution failures with exponential backoff, bounded by a
+  // wall-clock budget so a slow anchor can't stall the caller indefinitely.
+  const start = Date.now();
+  let lastError: unknown;
 
-    cache.set(cacheKey, { data, expiresAt: Date.now() + TTL_MS });
-    return data;
-  } catch (err) {
-    cache.delete(cacheKey);
-    throw new Error(
-      `Failed to resolve stellar.toml for "${cacheKey}": ${
-        err instanceof Error ? err.message : String(err)
-      }`
-    );
+  for (let attempt = 1; attempt <= TOML_MAX_ATTEMPTS; attempt++) {
+    try {
+      const raw = (await StellarToml.Resolver.resolve(cacheKey)) as Record<string, unknown>;
+      const data = toSep1TomlData(cacheKey, raw);
+
+      cache.set(cacheKey, { data, expiresAt: Date.now() + TTL_MS });
+      return data;
+    } catch (err) {
+      lastError = err;
+
+      if (attempt < TOML_MAX_ATTEMPTS) {
+        const delay = TOML_RETRY_BASE_MS * 2 ** (attempt - 1);
+        if (Date.now() - start + delay <= TOML_RETRY_BUDGET_MS) {
+          await sleep(delay);
+          continue;
+        }
+      }
+      break;
+    }
   }
+
+  cache.delete(cacheKey);
+  throw new Error(
+    `Failed to resolve stellar.toml for "${cacheKey}": ${
+      lastError instanceof Error ? lastError.message : String(lastError)
+    }`
+  );
 }
 
 // ─── Public safe resolver (never throws) ─────────────────────────────────────

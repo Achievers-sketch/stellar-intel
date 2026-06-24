@@ -253,7 +253,6 @@ describe('useAnchorAuth', () => {
 
       // Resolve the request after unmount
       if (resolveAuth) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (resolveAuth as any)(createMockAuth());
       }
 

@@ -1,6 +1,16 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { StatusTracker } from '@/components/offramp/StatusTracker';
+
+vi.mock('@/lib/stellar/sep1', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/stellar/sep1')>();
+  return {
+    ...actual,
+    resolveToml: vi.fn(),
+  };
+});
+
+import { resolveToml } from '@/lib/stellar/sep1';
 
 const BASE_PROPS = {
   transactionId: 'txn-abc-123',
@@ -17,6 +27,29 @@ const BASE_PROPS = {
   error: undefined,
 } as const;
 
+beforeEach(() => {
+  vi.mocked(resolveToml).mockResolvedValue({
+    ok: true,
+    data: {
+      domain: 'cowrie.exchange',
+      TRANSFER_SERVER_SEP0024: null,
+      ANCHOR_QUOTE_SERVER: null,
+      WEB_AUTH_ENDPOINT: null,
+      SIGNING_KEY: null,
+      NETWORK_PASSPHRASE: null,
+      ORG_URL: 'https://www.cowrie.exchange',
+      ORG_SUPPORT_EMAIL: 'support@cowrie.exchange',
+      ORG_SUPPORT_URL: null,
+      CURRENCIES: [],
+      capabilities: { sep10: false, sep24: false, sep38: false, sep12: false },
+    },
+  });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe('StatusTracker', () => {
   it('renders the transaction ID', () => {
     render(<StatusTracker {...BASE_PROPS} />);
@@ -30,7 +63,7 @@ describe('StatusTracker', () => {
 
   it('shows "Completed" label when status is completed', () => {
     render(<StatusTracker {...BASE_PROPS} status="completed" />);
-    expect(screen.getAllByText('Completed').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Completed').length).toBeGreaterThan(0);
   });
 
   it('shows "Awaiting your payment" for pending_user_transfer_start status', () => {
@@ -90,4 +123,25 @@ describe('StatusTracker', () => {
     render(<StatusTracker {...BASE_PROPS} status="completed" />);
     expect(screen.queryByText('Live')).not.toBeInTheDocument();
   });
+
+  it('shows anchor support link after 10 minutes in pending_anchor', async () => {
+    vi.useFakeTimers();
+    render(
+      <StatusTracker {...BASE_PROPS} status="pending_anchor" anchorHomeDomain="cowrie.exchange" />
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(resolveToml).toHaveBeenCalledWith('cowrie.exchange');
+    expect(screen.queryByRole('link', { name: 'Contact anchor support' })).not.toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+    });
+
+    const link = screen.getByRole('link', { name: 'Contact anchor support' });
+    expect(link).toHaveAttribute('href', 'mailto:support@cowrie.exchange');
+    vi.useRealTimers();
+  }, 15_000);
 });

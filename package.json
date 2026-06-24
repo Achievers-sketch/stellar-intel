@@ -2,9 +2,12 @@
   "name": "stellar-intel",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node ./scripts/emit-version.js && next build",
     "start": "next start",
     "lint": "eslint --max-warnings 0",
     "lint:fix": "eslint --fix",
@@ -15,7 +18,9 @@
     "test": "vitest run",
     "test:watch": "vitest --watch",
     "test:coverage": "vitest --coverage",
+    "emit-version": "node ./scripts/emit-version.js",
     "test:release": "npm run typecheck && npm run lint && npm run format:check && npm run test && npm run build",
+    "emit-openapi": "tsx --tsconfig tsconfig.scripts.json scripts/emit-openapi.mts",
     "prepare": "husky || true"
   },
   "lint-staged": {
@@ -28,13 +33,16 @@
     ]
   },
   "dependencies": {
+    "@asteasolutions/zod-to-openapi": "^8.5.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@stellar/freighter-api": "^6.0.1",
     "@stellar/stellar-sdk": "^15.0.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.11.0",
-    "next": "16.2.6",
-    "react": "19.2.6",
-    "react-dom": "19.2.6",
+    "next": "16.2.9",
+    "pino": "^10.3.1",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
     "swr": "^2.4.1",
     "zod": "^4.3.6"
   },
@@ -46,22 +54,28 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@typescript-eslint/eslint-plugin": "^8.57.0",
-    "@typescript-eslint/parser": "^8.57.0",
+    "@typescript-eslint/eslint-plugin": "^8.62.0",
+    "@typescript-eslint/parser": "^8.62.0",
     "@vitejs/plugin-react": "^6.0.1",
+    "@vitest/coverage-v8": "^4.1.9",
+    "better-sqlite3": "^12.10.0",
     "eslint": "^10",
-    "eslint-config-next": "16.2.4",
+    "eslint-config-next": "16.2.9",
     "eslint-config-prettier": "^10.1.8",
     "fast-check": "^4.7.0",
+    "happy-dom": "^20.9.0",
     "jsdom": "^29.0.2",
     "lint-staged": "^17.0.7",
     "msw": "^2.13.2",
     "prettier": "^3.8.2",
     "tailwindcss": "^4",
+    "tsx": "^4.22.4",
     "typescript": "^6",
+    "typescript-eslint": "^8.62.0",
     "vitest": "^4.1.4"
   }
 }

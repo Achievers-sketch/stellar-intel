@@ -76,7 +76,7 @@ describe('SEP-1 Resolver Fixtures', () => {
         TRANSFER_SERVER_SEP0024: 'https://tempo.eu.com/api/sep24',
         WEB_AUTH_ENDPOINT: 'https://tempo.eu.com/api/auth',
         SIGNING_KEY: 'GATEMPO',
-        QUOTE_SERVER: 'https://tempo.eu.com/api/sep38',
+        ANCHOR_QUOTE_SERVER: 'https://tempo.eu.com/api/sep38',
       },
       expected: {
         TRANSFER_SERVER_SEP0024: 'https://tempo.eu.com/api/sep24',
